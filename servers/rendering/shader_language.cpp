@@ -38,6 +38,7 @@
 #include "servers/rendering/rendering_server.h"
 #include "servers/rendering/rendering_server_globals.h"
 #include "servers/rendering/shader_types.h"
+#include "servers/rendering/shader_preprocessor.h"
 
 #define HAS_WARNING(flag) (warning_flags & flag)
 
@@ -11308,48 +11309,22 @@ Error ShaderLanguage::_parse_shader_mode(bool p_is_stencil, const Vector<ModeInf
 	return OK;
 }
 
-// skips over whitespace and /* */ and // comments
+// skips over whitespace as preprocessed code has no comments
 static int _get_first_ident_pos(const String &p_code) {
 	int idx = 0;
 
 #define GETCHAR(m_idx) (((idx + m_idx) < p_code.length()) ? p_code[idx + m_idx] : char32_t(0))
 
 	while (true) {
-		if (GETCHAR(0) == '/' && GETCHAR(1) == '/') {
-			idx += 2;
-			while (true) {
-				if (GETCHAR(0) == 0) {
-					return 0;
-				}
-				if (GETCHAR(0) == '\n') {
-					idx++;
-					break; // loop
-				}
+		switch (GETCHAR(0)) {
+			case ' ':
+			case '\t':
+			case '\r':
+			case '\n': {
 				idx++;
-			}
-		} else if (GETCHAR(0) == '/' && GETCHAR(1) == '*') {
-			idx += 2;
-			while (true) {
-				if (GETCHAR(0) == 0) {
-					return 0;
-				}
-				if (GETCHAR(0) == '*' && GETCHAR(1) == '/') {
-					idx += 2;
-					break; // loop
-				}
-				idx++;
-			}
-		} else {
-			switch (GETCHAR(0)) {
-				case ' ':
-				case '\t':
-				case '\r':
-				case '\n': {
-					idx++;
-				} break; // switch
-				default:
-					return idx;
-			}
+			} break; // switch
+			default:
+				return idx;
 		}
 	}
 
@@ -11361,11 +11336,15 @@ String ShaderLanguage::get_shader_type(const String &p_code) {
 
 	String cur_identifier;
 
-	for (int i = _get_first_ident_pos(p_code); i < p_code.length(); i++) {
-		if (p_code[i] == ';') {
+	String pp_code;
+	ShaderPreprocessor preprocessor;
+	preprocessor.preprocess(p_code, "", pp_code);
+
+	for (int i = _get_first_ident_pos(pp_code); i < pp_code.length(); i++) {
+		if (pp_code[i] == ';') {
 			break;
 
-		} else if (p_code[i] <= 32) {
+		} else if (pp_code[i] <= 32) {
 			if (!cur_identifier.is_empty()) {
 				if (!reading_type) {
 					if (cur_identifier != "shader_type") {
@@ -11379,7 +11358,7 @@ String ShaderLanguage::get_shader_type(const String &p_code) {
 				}
 			}
 		} else {
-			cur_identifier += String::chr(p_code[i]);
+			cur_identifier += String::chr(pp_code[i]);
 		}
 	}
 
